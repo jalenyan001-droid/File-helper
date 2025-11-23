@@ -12,7 +12,7 @@ import {
   Loader2
 } from 'lucide-react';
 import ProductTable from './components/ProductTable';
-import { extractFieldsFromDoc, generateFilledDocument, generateExcelTable } from './services/docService';
+import { extractFieldsFromDoc, extractFieldsFromExcel, generateFilledDocument, generateFilledExcel, generateExcelTable } from './services/docService';
 import { enhanceText, suggestTableData } from './services/geminiService';
 import { AppStep, FieldDefinition, ProductItem } from './types';
 
@@ -43,10 +43,21 @@ const App: React.FC = () => {
     setStep(AppStep.ANALYZING);
     setError(null);
 
+    const fileExt = uploadedFile.name.split('.').pop()?.toLowerCase();
+    
     try {
-      const extractedFields = await extractFieldsFromDoc(uploadedFile);
+      let extractedFields: FieldDefinition[] = [];
+
+      if (fileExt === 'docx') {
+        extractedFields = await extractFieldsFromDoc(uploadedFile);
+      } else if (fileExt === 'xlsx') {
+        extractedFields = await extractFieldsFromExcel(uploadedFile);
+      } else {
+        throw new Error("不支持的文件类型。请上传 .docx 或 .xlsx 文件。");
+      }
+
       if (extractedFields.length === 0) {
-        setError("未能在文档中找到 {--字段--} 格式的标记。请检查模板。");
+        setError("未能在文件中找到 {--字段--} 格式的标记。请检查模板。");
         setStep(AppStep.UPLOAD);
         return;
       }
@@ -54,9 +65,9 @@ const App: React.FC = () => {
       setStep(AppStep.WIZARD);
     } catch (err: any) {
       console.error(err);
-      let msg = "解析文档失败，请确保是有效的 .docx 文件";
+      let msg = "解析文件失败";
       if (err.message && err.message.includes("document part")) {
-         msg = "解析错误: 无法找到文档主体，请确保上传的是有效的 Word (.docx) 文件";
+         msg = "解析错误: 无法找到文档主体，请确保文件有效";
       } else if (err.message) {
          msg = `解析错误: ${err.message}`;
       }
@@ -107,12 +118,20 @@ const App: React.FC = () => {
     if (!file) return;
     setIsProcessing(true);
     try {
-      // Pass fields to generateFilledDocument so it knows which tag is the table
-      const docBlob = await generateFilledDocument(file, formData, tableData || undefined, fields);
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      let blob: Blob;
+
+      if (fileExt === 'docx') {
+        blob = await generateFilledDocument(file, formData, tableData || undefined, fields);
+      } else if (fileExt === 'xlsx') {
+        blob = await generateFilledExcel(file, formData, tableData || undefined, fields);
+      } else {
+        throw new Error("不支持的文件类型");
+      }
       
       setStep(AppStep.COMPLETED);
       
-      const url = URL.createObjectURL(docBlob);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `Generated_${file.name}`;
@@ -153,7 +172,7 @@ const App: React.FC = () => {
         </div>
         <h2 className="text-2xl font-bold text-gray-800 mb-2">上传合同模板</h2>
         <p className="text-gray-500 mb-8">
-          请上传 .docx 文件，系统将自动识别 <span className="font-mono bg-gray-100 px-1 rounded">{`{--字段--}`}</span> 标记
+          请上传 .docx 或 .xlsx 文件，系统将自动识别 <span className="font-mono bg-gray-100 px-1 rounded">{`{--字段--}`}</span> 标记
         </p>
         
         <label className="relative group cursor-pointer w-full">
@@ -163,7 +182,12 @@ const App: React.FC = () => {
               <span className="text-sm text-gray-500 group-hover:text-blue-600 font-medium">点击或拖拽上传</span>
             </div>
           </div>
-          <input type="file" className="hidden" accept=".docx" onChange={handleFileUpload} />
+          <input 
+            type="file" 
+            className="hidden" 
+            accept=".docx,.xlsx" 
+            onChange={handleFileUpload} 
+          />
         </label>
         
         {error && (
@@ -271,7 +295,7 @@ const App: React.FC = () => {
         </div>
         <h2 className="text-3xl font-bold text-gray-800 mb-2">生成完毕!</h2>
         <p className="text-gray-500 mb-8">
-          您的文档已自动下载。表格已成功插入到文档中。
+          您的文档已自动下载。
         </p>
         
         <div className="flex flex-col gap-3">

@@ -2,6 +2,7 @@ import { FieldDefinition, ProductItem } from '../types';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import Mammoth from 'mammoth';
+import ExcelJS from 'exceljs';
 
 // Regex to find content between {- and -}
 const PLACEHOLDER_REGEX = /\{-([\s\S]+?)-\}/g;
@@ -43,6 +44,42 @@ export const extractFieldsFromDoc = async (file: File): Promise<FieldDefinition[
     reader.onerror = (e) => reject(e);
     reader.readAsArrayBuffer(file);
   });
+};
+
+export const extractFieldsFromExcel = async (file: File): Promise<FieldDefinition[]> => {
+  const buffer = await file.arrayBuffer();
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+
+  const uniqueFields = new Set<string>();
+  const fields: FieldDefinition[] = [];
+
+  workbook.eachSheet((worksheet) => {
+    worksheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        // Only process string or rich text cells
+        if (cell.type === ExcelJS.ValueType.String || cell.type === ExcelJS.ValueType.RichText) {
+          const text = cell.text || cell.value?.toString() || '';
+          const matches = Array.from(text.matchAll(PLACEHOLDER_REGEX));
+          
+          matches.forEach(match => {
+            const content = match[1].trim();
+            if (!uniqueFields.has(content)) {
+              uniqueFields.add(content);
+              fields.push({
+                originalTag: match[0],
+                fieldName: content,
+                isTable: content.includes(TABLE_KEYWORD)
+              });
+            }
+          });
+        }
+      });
+    });
+  });
+
+  fields.sort((a, b) => (a.isTable === b.isTable ? 0 : a.isTable ? 1 : -1));
+  return fields;
 };
 
 const generateTableXml = (items: ProductItem[], total: number): string => {
@@ -219,6 +256,98 @@ export const generateFilledDocument = async (
     
     reader.readAsArrayBuffer(file);
   });
+};
+
+export const generateFilledExcel = async (
+  file: File,
+  data: Record<string, any>,
+  tableData?: { items: ProductItem[], total: number },
+  fields?: FieldDefinition[]
+): Promise<Blob> => {
+  const buffer = await file.arrayBuffer();
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+
+  const tableField = fields?.find(f => f.isTable);
+
+  workbook.eachSheet((worksheet) => {
+    let tableInsertionRow = -1;
+    // Iterate rows to find text placeholders and the table placeholder
+    worksheet.eachRow((row, rowNumber) => {
+      row.eachCell((cell) => {
+         if (cell.type === ExcelJS.ValueType.String || cell.type === ExcelJS.ValueType.RichText) {
+             let text = cell.text;
+
+             // Check for Table Placeholder
+             if (tableField && text.includes(tableField.originalTag)) {
+                 tableInsertionRow = rowNumber;
+                 cell.value = null; // Clear placeholder
+             }
+
+             // Replace standard text placeholders
+             let modified = false;
+             const matches = Array.from(text.matchAll(PLACEHOLDER_REGEX));
+             for (const match of matches) {
+                 const key = match[1].trim();
+                 if (data[key] !== undefined) {
+                     text = text.replace(match[0], data[key]);
+                     modified = true;
+                 }
+             }
+             if (modified) {
+                 cell.value = text;
+             }
+         }
+      });
+    });
+
+    // Insert Table Data if placeholder was found
+    if (tableInsertionRow !== -1 && tableData) {
+        const headers = ['序号', '商品名称', '型号', '单位', '数量', '单价', '金额', '备注'];
+        
+        // 1. Insert Header Row at the placeholder location
+        const headerRow = worksheet.getRow(tableInsertionRow);
+        // Overwrite existing row values with headers
+        headerRow.values = headers; 
+        headerRow.font = { bold: true };
+        headerRow.alignment = { horizontal: 'center' };
+        headerRow.commit();
+
+        // 2. Insert Data Rows immediately after
+        let currentRowIdx = tableInsertionRow + 1;
+        
+        tableData.items.forEach((item, idx) => {
+            const rowValues = [
+                idx + 1,
+                item.name,
+                item.model,
+                item.unit,
+                item.quantity,
+                item.price,
+                item.amount,
+                item.remark
+            ];
+            // Insert new row, pushing existing content down
+            worksheet.insertRow(currentRowIdx, rowValues);
+            const r = worksheet.getRow(currentRowIdx);
+            r.alignment = { horizontal: 'center' };
+            r.commit();
+            currentRowIdx++;
+        });
+
+        // 3. Insert Total Row
+        const totalRowValues = ['合计', '', '', '', '', '', tableData.total, ''];
+        worksheet.insertRow(currentRowIdx, totalRowValues);
+        const totalRow = worksheet.getRow(currentRowIdx);
+        totalRow.font = { bold: true };
+        totalRow.alignment = { horizontal: 'right' };
+        totalRow.getCell(7).alignment = { horizontal: 'center' }; // Center the amount
+        totalRow.commit();
+    }
+  });
+
+  const outBuffer = await workbook.xlsx.writeBuffer();
+  return new Blob([outBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 };
 
 export const generateExcelTable = (items: ProductItem[], total: number): Blob => {
