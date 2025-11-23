@@ -1,0 +1,5 @@
+{
+  "name": "Smart Contract Filler",
+  "description": "A smart document automation tool that parses Word templates, guides users through data entry with a wizard, handles complex tables, and generates formatted contracts.",
+  "requestFramePermissions": []
+}
