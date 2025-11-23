@@ -4,8 +4,6 @@ import {
   FileText, 
   ArrowRight, 
   CheckCircle, 
-  Download, 
-  Sparkles, 
   AlertCircle,
   FileSpreadsheet,
   ChevronLeft,
@@ -13,7 +11,6 @@ import {
 } from 'lucide-react';
 import ProductTable from './components/ProductTable';
 import { extractFieldsFromDoc, extractFieldsFromExcel, generateFilledDocument, generateFilledExcel, generateExcelTable } from './services/docService';
-import { enhanceText, suggestTableData } from './services/geminiService';
 import { AppStep, FieldDefinition, ProductItem } from './types';
 
 const App: React.FC = () => {
@@ -25,7 +22,6 @@ const App: React.FC = () => {
   const [tableData, setTableData] = useState<{ items: ProductItem[], total: number } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
   
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
@@ -97,21 +93,6 @@ const App: React.FC = () => {
       ...prev,
       [currentField.fieldName]: value
     }));
-  };
-
-  const handleAiPolish = async () => {
-    const currentField = fields[currentFieldIndex];
-    const currentValue = formData[currentField.fieldName] || '';
-    
-    setAiLoading(true);
-    try {
-      const polished = await enhanceText(currentField.fieldName, currentValue);
-      handleInputChange(polished);
-    } catch (err) {
-      // Quietly fail
-    } finally {
-      setAiLoading(false);
-    }
   };
 
   const handleGenerate = async () => {
@@ -224,16 +205,6 @@ const App: React.FC = () => {
                 {isTable ? "填写表格数据" : `请输入: ${currentField.fieldName}`}
               </h2>
             </div>
-            {!isTable && (
-               <button 
-                 onClick={handleAiPolish}
-                 disabled={aiLoading}
-                 className="flex items-center gap-2 text-purple-600 hover:text-purple-700 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-lg text-sm transition-colors"
-               >
-                 {aiLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Sparkles className="w-4 h-4" />}
-                 AI 润色
-               </button>
-            )}
           </div>
 
           <div className="flex-1 p-6 overflow-auto bg-gray-50/50">
