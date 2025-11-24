@@ -22,6 +22,7 @@ const App: React.FC = () => {
   const [tableData, setTableData] = useState<{ items: ProductItem[], total: number } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
@@ -31,10 +32,7 @@ const App: React.FC = () => {
     }
   }, [currentFieldIndex, step]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const uploadedFile = e.target.files?.[0];
-    if (!uploadedFile) return;
-
+  const processFile = async (uploadedFile: File) => {
     setFile(uploadedFile);
     setStep(AppStep.ANALYZING);
     setError(null);
@@ -69,6 +67,33 @@ const App: React.FC = () => {
       }
       setError(msg);
       setStep(AppStep.UPLOAD);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploadedFile = e.target.files?.[0];
+    if (uploadedFile) {
+      processFile(uploadedFile);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const uploadedFile = e.dataTransfer.files?.[0];
+    if (uploadedFile) {
+      processFile(uploadedFile);
     }
   };
 
@@ -156,11 +181,26 @@ const App: React.FC = () => {
           请上传 .docx 或 .xlsx 文件，系统将自动识别 <span className="font-mono bg-gray-100 px-1 rounded">{`{--字段--}`}</span> 标记
         </p>
         
-        <label className="relative group cursor-pointer w-full">
-          <div className="flex items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-300">
-            <div className="flex flex-col items-center">
-              <Upload className="w-8 h-8 text-gray-400 group-hover:text-blue-500 mb-2" />
-              <span className="text-sm text-gray-500 group-hover:text-blue-600 font-medium">点击或拖拽上传</span>
+        <label 
+          className="relative group cursor-pointer w-full block"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <div className={`flex items-center justify-center w-full h-32 border-2 border-dashed rounded-xl transition-all duration-300 ${
+            isDragging 
+              ? 'border-blue-500 bg-blue-50 scale-[1.02] shadow-md' 
+              : 'border-gray-300 hover:border-blue-500 hover:bg-blue-50'
+          }`}>
+            <div className="flex flex-col items-center pointer-events-none">
+              <Upload className={`w-8 h-8 mb-2 transition-colors ${
+                isDragging ? 'text-blue-500' : 'text-gray-400 group-hover:text-blue-500'
+              }`} />
+              <span className={`text-sm font-medium transition-colors ${
+                isDragging ? 'text-blue-600' : 'text-gray-500 group-hover:text-blue-600'
+              }`}>
+                {isDragging ? '释放以上传文件' : '点击或拖拽上传'}
+              </span>
             </div>
           </div>
           <input 
